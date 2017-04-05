@@ -440,8 +440,11 @@ int main(int argc, char **argv)
 
 			if (memcmp(hash, conf->hash, hash_alg_size(conf->alg)) != 0) {
 				if (!conf->is_corrupted) {
+					pid_t pid = pid_by_path_get(conf->file);
+
 					bin2hex(hstr, hash, hash_alg_size(conf->alg));
-					alert("File is corrupted: %s:%s\n", conf->file, hstr);
+					alert("File is corrupted: pid:%u:%s:%s\n",
+						pid, conf->file, hstr);
 					conf->is_corrupted = true;
 				}
 			} else if (conf->is_corrupted) {
