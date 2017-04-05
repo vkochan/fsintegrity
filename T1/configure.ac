@@ -13,7 +13,7 @@ AC_CONFIG_HEADERS([config.h])
 # Checks for programs.
 
 # Checks for libraries.
-PKG_CHECK_MODULES([OpenSSL], [openssl])
+PKG_CHECK_MODULES([OPENSSL], [openssl])
 
 # Checks for header files.
 AC_CHECK_HEADERS([openssl/sha.h openssl/md5.h elf.h])
