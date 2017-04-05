@@ -212,7 +212,9 @@ static void config_free(void)
 static int pid_file_write(const char *file, pid_t pid)
 {
 	struct stat st;
+	int err = -1;
 	char buf[64];
+	int slen;
 	int fd;
 
 	if (stat(file, &st) == 0)
@@ -223,11 +225,19 @@ static int pid_file_write(const char *file, pid_t pid)
 		return -1;
 
 	sprintf(buf, "%d\n", getpid());
-	write(fd, buf, strlen(buf));
+	slen = strlen(buf);
+
+	if (write(fd, buf, slen) != slen) {
+		error("Failed to wrote pid into file\n");
+		err = -1;
+		goto out;
+	}
 
 	pid_file_created = file;
+	err = 0;
+out:
 	close(fd);
-	return 0;
+	return err;
 }
 
 static void handle_signal(int sig)
