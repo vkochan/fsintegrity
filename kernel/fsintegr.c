@@ -35,7 +35,13 @@ enum config_cmd_t {
 
 #define HASH_SIZE_MAX	SHA1_DIGEST_SIZE
 
+enum fsintegr_event_id_t {
+	FSINTEGR_EVT_VIOLATED,
+	FSINTEGR_EVT_FIXED,
+};
+
 struct fsintegr_event {
+	enum fsintegr_event_id_t id;
 	struct list_head list;
 	struct rcu_head rcu;
 	char *path;
@@ -44,6 +50,7 @@ struct fsintegr_event {
 struct fsintegr_config {
 	struct list_head list;
 	struct rcu_head rcu;
+	bool is_violated;
 	char *path;
 	u8 *hash;
 	int alg;
@@ -171,11 +178,25 @@ static void fs_events_seq_stop(struct seq_file *m, void *v)
 static int fs_events_seq_show(struct seq_file *seq, void *v)
 {
 	struct fsintegr_event *ev = v;
+	char *name;
 	
 	if (!ev)
 		return -1;
 
-	seq_printf(seq, "violated:file:%s\n", ev->path);
+	switch (ev->id) {
+	case FSINTEGR_EVT_VIOLATED:
+		name = "violated";
+		break;
+
+	case FSINTEGR_EVT_FIXED:
+		name = "fixed";
+		break;
+
+	default:
+		BUG();
+	}
+
+	seq_printf(seq, "%s:file:%s\n", name, ev->path);
 	return 0;
 }
  
@@ -458,7 +479,7 @@ static int file_read_buf(struct file *file, loff_t offs, char *buf,
 	return ret;
 }
 
-static int fsintegr_check(struct fsintegr_config *cf)
+static int fsintegr_file_check(struct fsintegr_config *cf)
 {
 	const char *alg_name = hash_algo_name[cf->alg];
 	struct crypto_shash *tfm = crypto_alloc_shash(alg_name, 0, 0);
@@ -508,7 +529,9 @@ static int fsintegr_check(struct fsintegr_config *cf)
 	}
 
 	if (crypto_shash_final(shash, hash))
-		rc = memcmp(cf->hash, hash, hsize);
+		goto out;
+
+	rc = memcmp(cf->hash, hash, hsize);
 out:
 
 	if (fbuf)
@@ -521,7 +544,7 @@ out:
 	return rc;
 }
 
-static void fsintegr_event_add(struct fsintegr_config *cf)
+static void fsintegr_event_add(struct fsintegr_config *cf, enum fsintegr_event_id_t id)
 {
 	struct fsintegr_event *ev;
 
@@ -531,6 +554,7 @@ static void fsintegr_event_add(struct fsintegr_config *cf)
 		return;
 	}
 
+	ev->id = id;
 	ev->path = kstrndup(cf->path, NAME_MAX, GFP_KERNEL);
 	if (!ev->path)
 		goto err;
@@ -549,22 +573,24 @@ err:
 }
 
 int fsintegr_thread(void *data) {
-	pr_info("started: %s\n", current->comm);
-
 	while (!kthread_should_stop()) {
 		struct fsintegr_config *cf;
 
 		rcu_read_lock();
 		list_for_each_entry_rcu(cf, &entries, list) {
-			if (fsintegr_check(cf))
-				fsintegr_event_add(cf);
+			if (fsintegr_file_check(cf)) {
+				if (!cf->is_violated)
+					fsintegr_event_add(cf, FSINTEGR_EVT_VIOLATED);
+				cf->is_violated = true;
+			} else if (cf->is_violated) {
+				fsintegr_event_add(cf, FSINTEGR_EVT_FIXED);
+				cf->is_violated = false;
+			}
 		}
 		rcu_read_unlock();
 
-		sleep(1);
+		sleep(2);
 	}
-
-	pr_info("stopped: %s\n", current->comm);
 
 	return 0;
 }
