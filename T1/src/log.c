@@ -1,3 +1,4 @@
+#include <time.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <syslog.h>
@@ -52,12 +53,26 @@ static char *get_level_str(int level)
     return "";
 }
 
+static void log_time(void)
+{
+	time_t t = time(NULL);;
+	char str[100];
+	struct tm *tm;
+
+	tm = localtime(&t);
+
+	strftime(str, sizeof(str), "%c", tm);
+	fprintf(flog, "%s: ", str);
+}
+
 int log_printf(int level, const char *fmt, ...)
 {
     va_list args;
 
     if (flog)
     {
+	log_time();
+
         fprintf(flog, "%s", get_level_str(level));
 
         va_start(args, fmt);
