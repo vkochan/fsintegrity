@@ -43,6 +43,27 @@ DESIGN
 
 The mutex is used for add/remove config/events.
 For reading the RCU is used to allow the fast access in case of multiple readers.
+
+                   |->      [   Main flow      ] <---------------------------------------------------
+                   |               |                                                          |      | 
+                   |              \|/                                                         |      |
+                   |   [    read next config entry     ]                                      |      |
+	           |	           |                                                          |      |
+                   |              \|/                                                         |      |
+                   |   [ calculate hash of current file]                                      |      |
+                   |               |                                                          |      |    
+                   |              \|/                                                         |      |
+                   |       <is hash the same> Yes ------------(is file marked as corrupted) -> NO    |
+                   |              No                                         |                       |
+                   |               |                                        \|/                      |
+                   |              \|/                                   [ Mark file as fixed ]       |
+                  Yes-- <is file already corrupted>                     [ add event          ]       |
+                                   |                                         |------------------------
+                                  No
+                                   |
+                                  \|/
+                       [  add event about coruption    ]
+                       [  mark file as corrupted       ]
                       
 TODO
 ----
@@ -56,4 +77,4 @@ TODO
 
 BUGS
 ----
-1) Check if the config entry is already exist.
+1) Check if the config entry is already exist before add it to the list
