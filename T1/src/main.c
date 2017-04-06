@@ -26,6 +26,13 @@
 static bool is_running = false;
 static bool is_daemon = false;
 
+enum integrity_check_t {
+	INTEGRITY_CHECK_NONE,
+	INTEGRITY_CHECK_RAW,
+	INTEGRITY_CHECK_ELF,
+};
+
+static enum integrity_check_t enhash_type = INTEGRITY_CHECK_RAW;
 static char *enhash_file;
 static char *enhash_alg;
 static char *conf_file;
@@ -38,6 +45,7 @@ char hstr[MAX_HASH_SIZE * 2 + 1] = {0};
 uint8_t hash[MAX_HASH_SIZE];
 
 struct conf_entry {
+	enum integrity_check_t check;
 	struct list_head list;
 	struct hash_alg *alg;
 	bool is_corrupted;
@@ -48,7 +56,7 @@ struct conf_entry {
 enum conf_token_t {
 	CONF_TOK_ALG,
 	CONF_TOK_HASH,
-	CONF_TOK_ELF,
+	CONF_TOK_FILE,
 	CONF_TOK_PATH,
 	CONF_TOK_END,
 };
@@ -118,12 +126,16 @@ static struct conf_entry *conf_entry_parse(char *line)
 				goto err;
 			}
 
-			state = CONF_TOK_ELF;
+			state = CONF_TOK_FILE;
 			break;
 
-		case CONF_TOK_ELF:
-			if (strncmp("elf", tok, 3) != 0) {
-				error("Expecting ':elf:' keyword\n");
+		case CONF_TOK_FILE:
+			if (strncmp("elf", tok, 3) == 0) {
+				conf->check = INTEGRITY_CHECK_ELF;
+			} else if (strncmp("raw", tok, 3) == 0) {
+				conf->check = INTEGRITY_CHECK_RAW;
+			} else {
+				error("Expecting 'elf' or 'raw' keyword\n");
 				goto err;
 			}
 
@@ -316,6 +328,7 @@ void help(void)
 	printf("   -d --daemon               run in background\n");
 	printf("   -e --enhash    FILE       enhash file only\n");
 	printf("   -a, --alg      NAME       hash alg: sha1(default), md5\n");
+	printf("   -t, --type     NAME       check type: 'elf' or 'raw' (default)\n");
 	printf("\n");
 }
 
@@ -327,6 +340,7 @@ static const struct option long_opts[] = {
 	{ "daemon", no_argument, 0, 'd' },
 	{ "enhash", required_argument, 0, 'e' },
 	{ "alg", required_argument, 0, 'a' },
+	{ "type", required_argument, 0, 't' },
 	{ NULL, 0, 0, 0}
 };
 
@@ -334,7 +348,7 @@ static int parse_args(int argc, char **argv)
 {
 	int opt, idx = 0;
 
-	while ((opt = getopt_long(argc, argv, "c:l:t:p:e:dh", long_opts, &idx)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:l:t:p:e:t:dh", long_opts, &idx)) != -1) {
 		switch (opt) {
 		case 'c':
 			conf_file = strdup(optarg);
@@ -354,6 +368,17 @@ static int parse_args(int argc, char **argv)
 		case 'a':
 			enhash_alg = strdup(optarg);
 			break;
+		case 't':
+			if (strncmp("elf", optarg, 3) == 0) {
+				enhash_type = INTEGRITY_CHECK_ELF;
+			} else if (strncmp("raw", optarg, 3) == 0) {
+				enhash_type = INTEGRITY_CHECK_RAW;
+			} else {
+				fprintf(stderr, "Invalid enhash type: %s\n", optarg);
+				help();
+				exit(1);
+			}
+			break;
 		case 'h':
 		case '?':
 			help();
@@ -363,6 +388,84 @@ static int parse_args(int argc, char **argv)
 			help();
 			exit(1);
 		}
+	}
+
+	return 0;
+}
+
+static int raw_file_hash(const char *file, struct hash_alg *alg, uint8_t *hash)
+{
+	uint8_t buf[4096];
+	int err = -1;
+	FILE *fp;
+
+	fp = fopen(file, "r");
+	if (!fp)
+		return error("Failed to open raw file %s\n", file);
+
+	err = hash_alg_init(alg);
+	if (err)
+		goto out;
+
+	while (!feof(fp)) {
+		ssize_t len;
+
+		len = fread(buf, 1, sizeof(buf), fp);
+		if (len <= 0)
+			break;
+
+		err = hash_alg_update(alg, buf, len);
+		if (err)
+			goto out;
+	}
+
+	err = hash_alg_finish(alg, hash);
+out:
+	fclose(fp);
+	return err;
+}
+
+static int integrity_calc(const char *file, enum integrity_check_t check,
+			  struct hash_alg *alg, uint8_t *hash)
+{
+	switch (check) {
+	case INTEGRITY_CHECK_RAW:
+		return raw_file_hash(file, alg, hash);
+
+	case INTEGRITY_CHECK_ELF:
+		return elf_file_hash(file, alg, hash);
+
+	case INTEGRITY_CHECK_NONE:
+	default:
+		assert(false);
+	}
+}
+
+static int integrity_check(struct conf_entry *conf)
+{
+	if (integrity_calc(conf->file, conf->check, conf->alg, hash))
+		return error("Failed enhash file %s\n", conf->file);
+
+	if (memcmp(hash, conf->hash, hash_alg_size(conf->alg)) != 0) {
+		if (!conf->is_corrupted) {
+			pid_t pid;
+
+			bin2hex(hstr, hash, hash_alg_size(conf->alg));
+
+			if (conf->check == INTEGRITY_CHECK_ELF) {
+				pid = pid_by_path_get(conf->file);
+				alert("ELF is corrupted pid(%u): elf:%s:%s\n", pid, conf->file, hstr);
+			} else if (conf->check == INTEGRITY_CHECK_RAW) {
+				alert("File is corrupted: raw:%s:%s\n", conf->file, hstr);
+			} else {
+				assert(false);
+			}
+
+			conf->is_corrupted = true;
+		}
+	} else if (conf->is_corrupted) {
+		alert("File is fixed: %s\n", conf->file);
+		conf->is_corrupted = false;
 	}
 
 	return 0;
@@ -390,7 +493,7 @@ int main(int argc, char **argv)
 			goto out;
 		}
 
-		if (elf_file_hash(enhash_file, alg, hash)) {
+		if (integrity_calc(enhash_file, enhash_type, alg, hash)) {
 			error("Failed enhash file %s\n");
 			goto out;
 		}
@@ -433,23 +536,9 @@ int main(int argc, char **argv)
 		struct conf_entry *conf;
 
 		list_for_each_entry(conf, &conf_list, list) {
-			if (elf_file_hash(conf->file, conf->alg, hash)) {
-				error("Failed enhash file %s\n", conf->file);
-				continue;
-			}
-
-			if (memcmp(hash, conf->hash, hash_alg_size(conf->alg)) != 0) {
-				if (!conf->is_corrupted) {
-					pid_t pid = pid_by_path_get(conf->file);
-
-					bin2hex(hstr, hash, hash_alg_size(conf->alg));
-					alert("File is corrupted: pid:%u:%s:%s\n",
-						pid, conf->file, hstr);
-					conf->is_corrupted = true;
-				}
-			} else if (conf->is_corrupted) {
-				alert("File is fixed: %s\n", conf->file);
-				conf->is_corrupted = false;
+			if (integrity_check(conf)) {
+				error("Integrity check failed\n");
+				goto out;
 			}
 		}
 
