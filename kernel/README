@@ -9,7 +9,7 @@ The module consists from 2 parts:
                and add event in case if the file was corrupted (calculated hash differs
                from the specified one, and if the file being corrupted has correct hash.
 
-   securityfs - there is 2 files which user app can use to specify file and monitor the events:
+   securityfs - there is 2 files which user app can use to specify the file and monitor the events:
                
                1) /sys/kernel/security/fsintegr/config
 
@@ -29,8 +29,31 @@ The module consists from 2 parts:
                   detected violation or if the file was fixed, events are automatically removed
                   after they got read, so user app needs to case about storing them.
 
+DESIGN
+------
+
+    [config entries]  ---------> [kfsintegr] --------> [events]
+      |     /\                                       |
+      |      |                                       |
+      |      |                                       |
+      \/     |                                       \/
+
+/sys/kernel/security/fsintegr/config         /sys/kernel/security/fsintegr/events
+    (read-write access)                                (read only acces)
+
+The mutex is used for add/remove config/events.
+For reading the RCU is used to allow the fast access in case of multiple readers.
+                      
 TODO
-====
+----
 1) Add ability to configure interval monitoring via securityfs file entry.
 
 2) Add tests cases to test the module.
+
+3) Add ability to modify the hash of specified file like:
+
+    set:<alg>:<hash>:file:<path>
+
+BUGS
+----
+1) Check if the config entry is already exist.
