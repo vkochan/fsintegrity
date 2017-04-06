@@ -1,0 +1,33 @@
+fsintegr
+========
+Periodically monitors the integrity of the specified files and hashes.
+The application may run in foreground or backround mode (-d option),
+in the background mode it requires the root privileges.
+
+Application reads files and hashes from the config file (-c option or /etc/fsintegr.conf)
+and periodically checks them for the integrity by calculating file hash each time.
+The file might be specified in the 2 modes:
+
+    raw - the whole file is enhashed
+    elf - only .text, .data and .rodata are enhashed
+
+It is possible to only enhash the specified file via command line:
+
+    fsintegr -e FILE -a sha1 -t elf # print file's SHA1 of the ELF sections only
+    fsintegr -e FILE -a md5 -t raw # print file's MD5 hash of the whole file
+
+The config file has the following format (w/o any spaces or delimiters except ':'):
+
+    <alg>:<hash>:raw:path
+    <alg>:<hash>:elf:path
+
+where:
+
+    <alg> - hash alg, may be "sha1" or "md5"
+    <hash> - hexadecimal value of the hash (w/o 0x prefix).
+
+To reload the configration it is possible to send SIGHUP signal.
+
+TODO
+----
+1) Add ability to specify/configure time interval.
