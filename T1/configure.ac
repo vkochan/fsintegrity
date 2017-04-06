@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([pshasher], [0.0.1], [vadim4j@gmail.com])
+AC_INIT([fsintegr], [0.0.1], [vadim4j@gmail.com])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 
 : ${CFLAGS=""}
