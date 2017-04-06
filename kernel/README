@@ -1,0 +1,36 @@
+kfsintegr
+=========
+The purpose of this module is to periodically check integrity of specified file and
+it's hash and inform user application if the file was cirrupted (violated).
+
+The module consists from 2 parts:
+
+   kfsintegr - kernel thread which periodically checks specified files and hash sum,
+               and add event in case if the file was corrupted (calculated hash differs
+               from the specified one, and if the file being corrupted has correct hash.
+
+   securityfs - there is 2 files which user app can use to specify file and monitor the events:
+               
+               1) /sys/kernel/security/fsintegr/config
+
+                  This file allows to add or del files for integrity checking in the format:
+
+                      add:<alg>:<hash>:file:<file>
+                      del:file:<file>
+                  
+                  where:
+                      <alg> - hash alg name, "sha1" or "md5".
+                      <hash> - hex value of the hash (without 0x prefix).
+                      <file> - file path starts with "/".
+
+               2) /sys/kernel/security/fsintegr/events
+
+                  User app may read the integrity events from this file about
+                  detected violation or if the file was fixed, events are automatically removed
+                  after they got read, so user app needs to case about storing them.
+
+TODO
+====
+1) Add ability to configure interval monitoring via securityfs file entry.
+
+2) Add tests cases to test the module.
