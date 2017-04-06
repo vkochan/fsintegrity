@@ -28,6 +28,9 @@ where:
 
 To reload the configration it is possible to send SIGHUP signal.
 
+If the file was corrupted then it will be logged into the console/syslog/file,
+if it was specified as "elf" then it's PID will be logged too (if the application is running).
+
 TODO
 ----
 1) Add ability to specify/configure time interval.
