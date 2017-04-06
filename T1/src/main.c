@@ -544,10 +544,11 @@ int main(int argc, char **argv)
 
 		sleep(1);
 	}
-	info("Exiting ...\n", APP_NAME);
 
 	rc = 0;
 out:
+	info("Exiting ...\n", APP_NAME);
+
 	if (is_daemon && pid_file_created)
 		unlink(pid_file_created);
 
